@@ -1,0 +1,12 @@
+import {Router} from 'express';
+import {portfolio,profile,skills,experience,projects,projectBySlug,guestbook,guestbookList} from '../controllers/publicController.js';
+const r=Router();
+r.get('/portfolio',portfolio);
+r.get('/profile',profile);
+r.get('/skills',skills);
+r.get('/experience',experience);
+r.get('/projects',projects);
+r.get('/projects/:slug',projectBySlug);
+r.get('/guestbook',guestbookList);
+r.post('/guestbook',guestbook);
+export default r;
