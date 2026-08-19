@@ -9,7 +9,7 @@ export default function usePortfolio(){
  const refresh=useCallback(async()=>{
    setLoading(true);
    try{
-     const remote=await api('/api/portfolio',{timeout:3500});
+     const remote=await api('/api/portfolio',{timeout:12000});
      setData(normalizePortfolio(remote));
      setError('');
    }catch(e){
