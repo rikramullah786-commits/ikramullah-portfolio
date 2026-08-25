@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';import mongoose from 'mongoose';import Profile from '../models/Profile.js';import Skill from '../models/Skill.js';import Experience from '../models/Experience.js';import Project from '../models/Project.js';import Guestbook from '../models/Guestbook.js';
+import jwt from 'jsonwebtoken';import mongoose from 'mongoose';import Profile from '../models/Profile.js';import Skill from '../models/Skill.js';import Experience from '../models/Experience.js';import Project from '../models/Project.js';import Certificate from '../models/Certificate.js';import Guestbook from '../models/Guestbook.js';
 import crypto from 'crypto';
 const slugify=s=>String(s||'project').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const cleanArray=v=>Array.isArray(v)?v.filter(Boolean):[];
@@ -66,5 +66,11 @@ export async function addScreenshots(req,res){
   res.json(p);
 }
 export async function deleteScreenshot(req,res){requireDB();const p=await Project.findById(req.params.id);if(!p)return res.status(404).json({message:'Project not found'});const i=Number(req.params.index);if(Number.isNaN(i)||i<0||i>=p.screenshots.length)return res.status(400).json({message:'Invalid screenshot index'});p.screenshots.splice(i,1);await p.save();res.json(p)}
+
+export async function uploadProfileImage(req,res){requireDB();const field=String(req.params.field||'');if(!['heroImage','aboutImage'].includes(field))return res.status(400).json({message:'Invalid profile image field'});if(!req.file)return res.status(400).json({message:'No image received'});const url=await uploadToCloudinary(req.file);res.json(await Profile.findOneAndUpdate({},{$set:{[field]:url}},{new:true,upsert:true,setDefaultsOnInsert:true}));}
+export async function createCertificate(req,res){requireDB();const b=req.body||{};if(!String(b.title||'').trim())return res.status(400).json({message:'Certificate title is required'});res.status(201).json(await Certificate.create({...b,title:String(b.title).trim()}));}
+export async function updateCertificate(req,res){requireDB();const b={...(req.body||{})};delete b._id;delete b.id;const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});Object.assign(doc,b);res.json(await doc.save());}
+export async function deleteCertificate(req,res){requireDB();const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});await doc.deleteOne();res.json({message:'Certificate deleted'});}
+export async function uploadCertificateImage(req,res){requireDB();if(!req.file)return res.status(400).json({message:'No image received'});const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});doc.image=await uploadToCloudinary(req.file);res.json(await doc.save());}
 
 export async function getGuestbook(req,res){requireDB();res.json(await Guestbook.find().sort({createdAt:-1}).lean())}
