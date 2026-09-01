@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, Sparkles } from 'lucide-react';
 import gsap from 'gsap';
 
-const imageOf = p => p.coverImage || (Array.isArray(p.screenshots) && p.screenshots[0] 
-  ? (typeof p.screenshots[0] === 'string' ? p.screenshots[0] : p.screenshots[0].image) 
-  : '');
+const imageOf = p => {
+  const shots = Array.isArray(p.screenshots) ? p.screenshots.map((s,i)=>typeof s==='string'?{image:s,order:i+1}:s).filter(s=>s?.image).sort((a,b)=>(Number(a.order)||999999)-(Number(b.order)||999999)) : [];
+  return shots[0]?.image || p.coverImage || '';
+};
 
 export default function ProjectsSection({ projects }) {
   const onMove = e => {

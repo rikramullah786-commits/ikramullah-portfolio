@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const screenshotSchema = new mongoose.Schema({
   image: { type: String, required: true },
   title: { type: String, default: '' },
-  description: { type: String, default: '' }
+  description: { type: String, default: '' },
+  order: { type: Number, default: 1 }
 }, {_id: true});
 
 const schema = new mongoose.Schema({

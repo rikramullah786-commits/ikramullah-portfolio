@@ -2,7 +2,8 @@ import React,{useState} from 'react';
 import {Link,useNavigate,useParams} from 'react-router-dom';
 import {ArrowLeft,ArrowUpRight,ChevronLeft,ChevronRight,ExternalLink,Github,Sparkles} from 'lucide-react';
 
-const shot=(s)=>typeof s==='string'?{image:s,title:'',description:''}:s||{};
+const shot=(s,i)=>{const x=typeof s==='string'?{image:s,title:'',description:'',order:i+1}:s||{};return {...x,order:Number(x.order)||i+1};};
+const sortShots=v=>Array.isArray(v)?v.map(shot).filter(x=>x.image).sort((a,b)=>a.order-b.order):[];
 
 export default function ProjectDetail({data}){
   const {slug}=useParams(),navigate=useNavigate();
@@ -10,7 +11,7 @@ export default function ProjectDetail({data}){
   const [index,setIndex]=useState(0),[lightbox,setLightbox]=useState(false);
   if(!p)return <main className="not-found"><h1>PROJECT NOT FOUND.</h1><Link to="/">Return home ↗</Link></main>;
 
-  const gallery=(Array.isArray(p.screenshots)?p.screenshots:[]).map(shot).filter(x=>x.image);
+  const gallery=sortShots(p.screenshots);
   const images=[...(p.coverImage && !gallery.some(x=>x.image===p.coverImage)?[{image:p.coverImage,title:'Project overview',description:''}]:[]),...gallery];
   const current=images[index]||{};
   const next=()=>setIndex(i=>images.length?(i+1)%images.length:0);
