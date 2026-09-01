@@ -11,9 +11,20 @@ export function login(req,res){const {username,password}=req.body||{};if(usernam
 export async function getProfile(req,res){requireDB();res.json(await Profile.findOne().lean()||{})}
 export async function updateProfile(req,res){requireDB();const doc=await Profile.findOneAndUpdate({},req.body,{new:true,upsert:true,setDefaultsOnInsert:true});res.json(doc)}
 export async function createProject(req,res){requireDB();const b=req.body||{};const p=await Project.create({...b,slug:b.slug||slugify(b.title),tech:cleanArray(b.tech),features:cleanArray(b.features),screenshots:cleanArray(b.screenshots)});res.status(201).json(p)}
-export async function updateProject(req,res){requireDB();const b={...(req.body||{})};delete b._id;delete b.id;if(b.slug)b.slug=slugify(b.slug);else if(b.title)b.slug=slugify(b.title);for(const k of ['tech','features'])if(k in b)b[k]=cleanArray(b[k]);
-if('screenshots' in b)b.screenshots=cleanScreenshots(b.screenshots);
-if(!b.coverImage && Array.isArray(b.screenshots) && b.screenshots[0]?.image)b.coverImage=b.screenshots[0].image;const p=await resolveByIdOrLegacy(Project,req.params.id,['slug','title']);if(!p)return res.status(404).json({message:'Project not found'});Object.assign(p,b);const saved=await p.save();res.json(saved)}
+export async function updateProject(req,res){
+ requireDB();
+ const b={...(req.body||{})};
+ delete b._id; delete b.id;
+ if(b.slug)b.slug=slugify(b.slug);else if(b.title)b.slug=slugify(b.title);
+ for(const k of ['tech','features'])if(k in b)b[k]=cleanArray(b[k]);
+ if('screenshots' in b)b.screenshots=cleanScreenshots(b.screenshots);
+ const current=await resolveByIdOrLegacy(Project,req.params.id,['slug','title']);
+ if(!current)return res.status(404).json({message:'Project not found'});
+ if(!b.coverImage && Array.isArray(b.screenshots) && b.screenshots[0]?.image)b.coverImage=b.screenshots[0].image;
+ const saved=await Project.findByIdAndUpdate(current._id,{$set:b},{new:true,runValidators:true});
+ if(!saved)return res.status(404).json({message:'Project no longer exists'});
+ res.json(saved)
+}
 export async function deleteProject(req,res){requireDB();const p=await resolveByIdOrLegacy(Project,req.params.id,['slug','title']);if(!p)return res.status(404).json({message:'Project not found'});await p.deleteOne();res.json({message:'Project deleted'})}
 export async function createSkill(req,res){requireDB();res.status(201).json(await Skill.create({...req.body,level:Number(req.body.level)||0}))}
 const resolveByIdOrLegacy = async (Model, rawId, legacyFields=[]) => {
@@ -51,8 +62,10 @@ async function uploadToCloudinary(file){
 
 export async function addScreenshots(req,res){
   requireDB();
-  const p=await Project.findById(req.params.id);
-  if(!p)return res.status(404).json({message:'Project not found'});
+  const projectId=String(req.params.id||'').trim();
+  if(!mongoose.isValidObjectId(projectId))return res.status(400).json({message:'Invalid project id'});
+  const exists=await Project.exists({_id:projectId});
+  if(!exists)return res.status(404).json({message:'Project not found'});
   const files=req.files||[];
   if(!files.length)return res.status(400).json({message:'No images received'});
   const incoming=[];
@@ -60,17 +73,50 @@ export async function addScreenshots(req,res){
     const image=await uploadToCloudinary(file);
     incoming.push({image,title:'',description:''});
   }
-  p.screenshots=[...(p.screenshots||[]),...incoming];
-  if(!p.coverImage&&incoming[0]?.image)p.coverImage=incoming[0].image;
-  await p.save();
-  res.json(p);
+  const update={$push:{screenshots:{$each:incoming}}};
+  const current=await Project.findById(projectId).select('coverImage').lean();
+  if(!current)return res.status(404).json({message:'Project no longer exists'});
+  if(!current.coverImage&&incoming[0]?.image)update.$set={coverImage:incoming[0].image};
+  const saved=await Project.findByIdAndUpdate(projectId,update,{new:true,runValidators:true});
+  if(!saved)return res.status(404).json({message:'Project no longer exists'});
+  res.json(saved);
 }
-export async function deleteScreenshot(req,res){requireDB();const p=await Project.findById(req.params.id);if(!p)return res.status(404).json({message:'Project not found'});const i=Number(req.params.index);if(Number.isNaN(i)||i<0||i>=p.screenshots.length)return res.status(400).json({message:'Invalid screenshot index'});p.screenshots.splice(i,1);await p.save();res.json(p)}
+export async function deleteScreenshot(req,res){
+  requireDB();
+  const p=await Project.findById(req.params.id).select('screenshots');
+  if(!p)return res.status(404).json({message:'Project not found'});
+  const i=Number(req.params.index);
+  if(!Number.isInteger(i)||i<0||i>=p.screenshots.length)return res.status(400).json({message:'Invalid screenshot index'});
+  const screenshotId=p.screenshots[i]?._id;
+  const saved=screenshotId
+    ? await Project.findByIdAndUpdate(p._id,{$pull:{screenshots:{_id:screenshotId}}},{new:true})
+    : null;
+  if(!saved)return res.status(404).json({message:'Project no longer exists'});
+  res.json(saved)
+}
 
 export async function uploadProfileImage(req,res){requireDB();const field=String(req.params.field||'');if(!['heroImage','aboutImage'].includes(field))return res.status(400).json({message:'Invalid profile image field'});if(!req.file)return res.status(400).json({message:'No image received'});const url=await uploadToCloudinary(req.file);res.json(await Profile.findOneAndUpdate({},{$set:{[field]:url}},{new:true,upsert:true,setDefaultsOnInsert:true}));}
 export async function createCertificate(req,res){requireDB();const b=req.body||{};if(!String(b.title||'').trim())return res.status(400).json({message:'Certificate title is required'});res.status(201).json(await Certificate.create({...b,title:String(b.title).trim()}));}
-export async function updateCertificate(req,res){requireDB();const b={...(req.body||{})};delete b._id;delete b.id;const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});Object.assign(doc,b);res.json(await doc.save());}
+export async function updateCertificate(req,res){
+ requireDB();
+ const b={...(req.body||{})};
+ delete b._id; delete b.id;
+ const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);
+ if(!doc)return res.status(404).json({message:'Certificate not found'});
+ const updated=await Certificate.findByIdAndUpdate(doc._id,{$set:b},{new:true,runValidators:true});
+ if(!updated)return res.status(404).json({message:'Certificate no longer exists'});
+ res.json(updated)
+}
 export async function deleteCertificate(req,res){requireDB();const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});await doc.deleteOne();res.json({message:'Certificate deleted'});}
-export async function uploadCertificateImage(req,res){requireDB();if(!req.file)return res.status(400).json({message:'No image received'});const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);if(!doc)return res.status(404).json({message:'Certificate not found'});doc.image=await uploadToCloudinary(req.file);res.json(await doc.save());}
+export async function uploadCertificateImage(req,res){
+ requireDB();
+ if(!req.file)return res.status(400).json({message:'No image received'});
+ const doc=await resolveByIdOrLegacy(Certificate,req.params.id,['title']);
+ if(!doc)return res.status(404).json({message:'Certificate not found'});
+ const image=await uploadToCloudinary(req.file);
+ const updated=await Certificate.findByIdAndUpdate(doc._id,{$set:{image}},{new:true,runValidators:true});
+ if(!updated)return res.status(404).json({message:'Certificate no longer exists'});
+ res.json(updated)
+}
 
 export async function getGuestbook(req,res){requireDB();res.json(await Guestbook.find().sort({createdAt:-1}).lean())}
